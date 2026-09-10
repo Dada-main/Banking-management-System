@@ -164,6 +164,138 @@ const transferMoney = async (req, res) => {
 };
 
 
+// Interbank transfer
+const interbankTransfer = async (req, res) => {
+
+  try {
+
+    const {
+      from,
+      to,
+      amount
+    } = req.body;
+
+
+    // Validate required fields
+    if (!from || !to || !amount) {
+
+      return res.status(400).json({
+        message: "Sender account, receiver account and amount are required"
+      });
+
+    }
+
+
+    // Validate amount
+    if (amount <= 0) {
+
+      return res.status(400).json({
+        message: "Transfer amount must be greater than zero"
+      });
+
+    }
+
+
+    // Prevent transfer to same account
+    if (from === to) {
+
+      return res.status(400).json({
+        message: "Sender and receiver accounts cannot be the same"
+      });
+
+    }
+
+
+    // Find sender account
+    const senderAccount = await Account.findOne({
+      accountNumber: from
+    });
+
+
+    if (!senderAccount) {
+
+      return res.status(404).json({
+        message: "Sender account not found"
+      });
+
+    }
+
+
+    // Check sufficient balance
+    if (senderAccount.balance < amount) {
+
+      return res.status(400).json({
+        message: "Insufficient balance"
+      });
+
+    }
+
+
+    // Generate transaction reference
+    const transactionReference = generateTransactionReference();
+
+
+    // Deduct money from sender
+    senderAccount.balance -= amount;
+
+    await senderAccount.save();
+
+
+    // Save transaction
+    const transaction = await Transaction.create({
+
+      transactionReference,
+
+      senderAccount: from,
+
+      receiverAccount: to,
+
+      amount,
+
+      transactionType: "inter-bank",
+
+      status: "successful",
+
+      description: "Interbank transfer"
+
+    });
+
+
+    res.status(200).json({
+
+      message: "Interbank transfer successful",
+
+      data: {
+        transactionReference,
+        senderAccount: from,
+        receiverAccount: to,
+        amount,
+        status: "successful"
+      }
+
+    });
+
+  } catch (error) {
+
+    console.error(
+      "Interbank transfer failed:",
+      error.message
+    );
+
+    res.status(500).json({
+
+      message: "Interbank transfer failed",
+
+      error: error.message
+
+    });
+
+  }
+
+};
+
+
 module.exports = {
-  transferMoney
+  transferMoney,
+  interbankTransfer
 };

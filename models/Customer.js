@@ -18,6 +18,14 @@ const customerSchema = new mongoose.Schema({
     required: true
   },
 
+  bvn: {
+    type: String
+  },
+
+  nin: {
+    type: String
+  },
+
   accountNumber: {
     type: String,
     unique: true,
@@ -30,6 +38,7 @@ const customerSchema = new mongoose.Schema({
 
 
 // Create model
+
 const Customer = mongoose.model("Customer", customerSchema);
 
 module.exports = Customer;
