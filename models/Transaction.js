@@ -1,44 +1,63 @@
 const mongoose = require("mongoose");
 
-const transactionSchema = new mongoose.Schema({
-  transactionReference: {
-    type: String,
-    required: true,
-    unique: true
+
+const transactionSchema = new mongoose.Schema(
+
+  {
+
+    owner: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Customer",
+      required: true,
+      index: true
+    },
+
+    reference: {
+      type: String,
+      required: true,
+      unique: true
+    },
+
+    fromAccount: {
+      type: String,
+      required: true
+    },
+
+    toAccount: {
+      type: String,
+      required: true
+    },
+
+    amount: {
+      type: Number,
+      required: true
+    },
+
+    type: {
+      type: String,
+      enum: ["INTRA_BANK", "INTER_BANK"],
+      required: true
+    },
+
+    status: {
+      type: String,
+      enum: ["PENDING", "SUCCESSFUL", "FAILED"],
+      default: "PENDING"
+    },
+
+    narration: {
+      type: String
+    },
+
+    rawNibssResponse: {
+      type: mongoose.Schema.Types.Mixed
+    }
+
   },
-  senderAccount: {
-    type: String,
-    required: true
-  },
-  receiverAccount: {
-    type: String,
-    required: true
-  },
-  receiverBankCode: {
-    type: String
-  },
-  amount: {
-    type: Number,
-    required: true
-  },
-  transactionType: {
-    type: String,
-    enum: ["intra-bank", "inter-bank"],
-    required: true
-  },
-  status: {
-    type: String,
-    enum: ["pending", "successful", "failed"],
-    default: "pending"
-  },
-  description: {
-    type: String
-  }
-},
-{timestamps: true}
+
+  { timestamps: true }
+
 );
 
-//create model from schema
-const Transaction = mongoose.model("Transaction", transactionSchema);
 
-module.exports = Transaction;    //export the model to use in other files
+module.exports = mongoose.model("Transaction", transactionSchema);

@@ -1,14 +1,9 @@
-const express = require("express");
-
-const {
-  getBalance
-} = require("../controllers/BalanceController");
+const express = require('express');
+const { requireAuth } = require('../middleware/auth');
+const { getBalance } = require('../controllers/BalanceController');
 
 const router = express.Router();
-
-
-// Balance enquiry
-router.get("/:accountNumber", getBalance);
-
+router.use(requireAuth);
+router.get('/', getBalance);
 
 module.exports = router;

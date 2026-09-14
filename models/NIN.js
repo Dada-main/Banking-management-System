@@ -1,36 +1,48 @@
 const mongoose = require("mongoose");
 
-const ninSchema = new mongoose.Schema({
-  nin: {
-    type: String,
-    required: true,
-    unique: true
+
+const ninSchema = new mongoose.Schema(
+
+  {
+
+    customer: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Customer",
+      required: true,
+      unique: true
+    },
+
+    nin: {
+      type: String,
+      required: true
+    },
+
+    firstName: {
+      type: String
+    },
+
+    lastName: {
+      type: String
+    },
+
+    dob: {
+      type: String
+    },
+
+    verified: {
+      type: Boolean,
+      default: false
+    },
+
+    verifiedAt: {
+      type: Date
+    }
+
   },
-  firstName: {
-    type: String,
-    required: true
-  },
-  lastName: {
-    type: String,
-    required: true
-  },
-  phoneNumber: {
-    type: String,
-    required: true
-  },
-  dateOfBirth: {
-    type: String,
-    required: true
-  },
-  verified: {
-    type: Boolean,
-    default: false
-  }
-},
-{timestamps: true}
+
+  { timestamps: true }
+
 );
 
-//create model from schema
-const NIN = mongoose.model("NIN", ninSchema);
 
-module.exports = NIN;    //export the model to use in other files
+module.exports = mongoose.model("NIN", ninSchema);

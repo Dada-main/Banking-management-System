@@ -1,69 +1,67 @@
 const Transaction = require("../models/Transaction");
+const { nibssRequest } = require("../config/nibss");
 
 
-// Get transaction status
+// Scoped so a customer can only check status of THEIR OWN transaction.
 const getTransactionStatus = async (req, res) => {
 
   try {
 
-    const { ref } = req.params;
+    const { reference } = req.params;
 
 
-    // Validate reference
-    if (!ref) {
+    const localTx = await Transaction.findOne({
+      reference,
+      owner: req.user.customerId
+    });
 
-      return res.status(400).json({
-        message: "Transaction reference is required"
+
+    if (!localTx) {
+
+      return res.status(404).json({
+        message: "Transaction not found for this customer"
       });
 
     }
 
 
-    // Find transaction
-    const transaction = await Transaction.findOne({
-      transactionReference: ref
-    });
+    const liveStatus = await nibssRequest(
+      "get",
+      `/api/transaction/${reference}`
+    );
 
 
-    // Transaction not found
-    if (!transaction) {
+    if (liveStatus.status && liveStatus.status !== localTx.status) {
 
-      return res.status(404).json({
-        message: "Transaction not found"
-      });
+      localTx.status = liveStatus.status;
+
+      await localTx.save();
 
     }
 
 
     res.status(200).json({
 
-      message: "Transaction status retrieved successfully",
+      message: "Transaction status retrieved",
 
-      data: {
-        transactionReference: transaction.transactionReference,
-        senderAccount: transaction.senderAccount,
-        receiverAccount: transaction.receiverAccount,
-        amount: transaction.amount,
-        transactionType: transaction.transactionType,
-        status: transaction.status,
-        description: transaction.description,
-        createdAt: transaction.createdAt
-      }
+      local: localTx,
+
+      live: liveStatus
 
     });
 
   } catch (error) {
 
     console.error(
-      "Transaction status failed:",
+      "Transaction status check failed:",
       error.message
     );
 
     res.status(500).json({
 
-      message: "Transaction status failed",
+      message: "Transaction status check failed",
 
-      error: error.message
+      error: error.response?.data || error.message
 
     });
 
@@ -72,56 +70,37 @@ const getTransactionStatus = async (req, res) => {
 };
 
 
-const getTransactionHistory = async (req, res) => {
+// Only ever the requesting customer's own history — derived from the
+// JWT (req.user.customerId), never a query param.
+const getHistory = async (req, res) => {
 
   try {
 
-    const { accountNumber } = req.params;
-
-
-    // Validate account number
-    if (!accountNumber) {
-
-      return res.status(400).json({
-        message: "Account number is required"
-      });
-
-    }
-
-
-    // Find transactions involving this account
-    const transactions = await Transaction.find({
-
-      $or: [
-        { senderAccount: accountNumber },
-        { receiverAccount: accountNumber }
-      ]
-
+    const history = await Transaction.find({
+      owner: req.user.customerId
     }).sort({ createdAt: -1 });
 
 
     res.status(200).json({
 
-      message: "Transaction history retrieved successfully",
+      message: "Transaction history retrieved",
 
-      accountNumber,
+      count: history.length,
 
-      count: transactions.length,
-
-      data: transactions
+      data: history
 
     });
 
   } catch (error) {
 
     console.error(
-      "Transaction history failed:",
+      "Fetching transaction history failed:",
       error.message
     );
 
     res.status(500).json({
 
-      message: "Transaction history failed",
+      message: "Fetching transaction history failed",
 
       error: error.message
 
@@ -134,5 +113,5 @@ const getTransactionHistory = async (req, res) => {
 
 module.exports = {
   getTransactionStatus,
-  getTransactionHistory
+  getHistory
 };

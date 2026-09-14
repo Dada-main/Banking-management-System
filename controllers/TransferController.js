@@ -1,91 +1,63 @@
 const Account = require("../models/Account");
 const Transaction = require("../models/Transaction");
+const { nibssRequest } = require("../config/nibss");
 
 
-// Generate transaction reference
-const generateTransactionReference = () => {
-
-  return `TXN-${Date.now()}-${Math.floor(
-    Math.random() * 10000
-  )}`;
-
+// Maps NIBSS's status strings to the enum values allowed by our Transaction schema
+const statusMap = {
+  SUCCESS: "SUCCESSFUL",
+  PENDING: "PENDING",
+  FAILED: "FAILED"
 };
 
 
-// Transfer money
-const transferMoney = async (req, res) => {
+// "from" is always derived from the logged-in customer's own account —
+// never trust a from/sender field coming from the request body.
+const createTransfer = async (req, res) => {
 
   try {
 
     const {
-      from,
-      to,
-      amount
+      toAccount,
+      amount,
+      type,
+      narration
     } = req.body;
 
 
-    // Validate required fields
-    if (!from || !to || !amount) {
+    if (!toAccount || !amount || !type) {
 
       return res.status(400).json({
-        message: "Sender account, receiver account and amount are required"
+        message: "toAccount, amount and type are required"
       });
 
     }
 
 
-    // Validate amount
-    if (amount <= 0) {
-
-      return res.status(400).json({
-        message: "Transfer amount must be greater than zero"
-      });
-
-    }
-
-
-    // Prevent transfer to same account
-    if (from === to) {
-
-      return res.status(400).json({
-        message: "Sender and receiver accounts cannot be the same"
-      });
-
-    }
-
-
-    // Find sender account
     const senderAccount = await Account.findOne({
-      accountNumber: from
+      customer: req.user.customerId
     });
-
 
     if (!senderAccount) {
 
       return res.status(404).json({
-        message: "Sender account not found"
+        message: "You do not have an account yet"
       });
 
     }
 
 
-    // Find receiver account
-    const receiverAccount = await Account.findOne({
-      accountNumber: to
-    });
+    if (senderAccount.accountNumber === toAccount) {
 
-
-    if (!receiverAccount) {
-
-      return res.status(404).json({
-        message: "Receiver account not found"
+      return res.status(400).json({
+        message: "Cannot transfer to your own account"
       });
 
     }
 
 
-    // Check sufficient balance
-    if (senderAccount.balance < amount) {
+    // Guard against overdrafts locally, even though NIBSS may also enforce this
+    if (senderAccount.balance < Number(amount)) {
 
       return res.status(400).json({
         message: "Insufficient balance"
@@ -94,53 +66,88 @@ const transferMoney = async (req, res) => {
     }
 
 
-    // Deduct money from sender
-    senderAccount.balance -= amount;
-
-    await senderAccount.save();
-
-
-    // Add money to receiver
-    receiverAccount.balance += amount;
-
-    await receiverAccount.save();
-
-
-    // Generate transaction reference
-    const transactionReference = generateTransactionReference();
+    const nibssResponse = await nibssRequest(
+      "post",
+      "/api/transfer",
+      {
+        data: {
+          from: senderAccount.accountNumber,
+          to: toAccount,
+          amount: Number(amount)
+        }
+      }
+    );
 
 
-    // Save transaction
+    const reference =
+      nibssResponse.reference ||
+      nibssResponse.txId ||
+      nibssResponse.transactionId;
+
+
+    const rawStatus = nibssResponse.status || "PENDING";
+
+    const normalizedStatus =
+      statusMap[rawStatus] || "PENDING";
+
+
+    // --------------------------------
+    // Update local balances only if the transfer actually succeeded
+    // --------------------------------
+
+    if (normalizedStatus === "SUCCESSFUL") {
+
+      senderAccount.balance -= Number(amount);
+
+      await senderAccount.save();
+
+
+      const receiverAccount = await Account.findOne({
+        accountNumber: toAccount
+      });
+
+
+      // Receiver might belong to a colleague and not exist in our local DB —
+      // only update if we actually have a local record for it
+      if (receiverAccount) {
+
+        receiverAccount.balance += Number(amount);
+
+        await receiverAccount.save();
+
+      }
+
+    }
+
+
     const transaction = await Transaction.create({
 
-      transactionReference,
+      owner: req.user.customerId,
 
-      senderAccount: from,
+      reference,
 
-      receiverAccount: to,
+      fromAccount: senderAccount.accountNumber,
+
+      toAccount,
 
       amount,
 
-      transactionType: "intra-bank",
+      type,
 
-      status: "successful",
+      narration,
 
-      description: "Intra-bank transfer"
+      status: normalizedStatus,
+
+      rawNibssResponse: nibssResponse
 
     });
 
 
-    res.status(200).json({
+    res.status(201).json({
 
-      message: "Transfer successful",
+      message: "Transfer submitted",
 
-      data: {
-        transactionReference,
-        senderAccount: from,
-        receiverAccount: to,
-        amount,
-        status: "successful"
-      }
+      data: transaction
 
     });
 
@@ -155,138 +162,7 @@ const transferMoney = async (req, res) => {
 
       message: "Transfer failed",
 
-      error: error.message
-
-    });
-
-  }
-
-};
-
-
-// Interbank transfer
-const interbankTransfer = async (req, res) => {
-
-  try {
-
-    const {
-      from,
-      to,
-      amount
-    } = req.body;
-
-
-    // Validate required fields
-    if (!from || !to || !amount) {
-
-      return res.status(400).json({
-        message: "Sender account, receiver account and amount are required"
-      });
-
-    }
-
-
-    // Validate amount
-    if (amount <= 0) {
-
-      return res.status(400).json({
-        message: "Transfer amount must be greater than zero"
-      });
-
-    }
-
-
-    // Prevent transfer to same account
-    if (from === to) {
-
-      return res.status(400).json({
-        message: "Sender and receiver accounts cannot be the same"
-      });
-
-    }
-
-
-    // Find sender account
-    const senderAccount = await Account.findOne({
-      accountNumber: from
-    });
-
-
-    if (!senderAccount) {
-
-      return res.status(404).json({
-        message: "Sender account not found"
-      });
-
-    }
-
-
-    // Check sufficient balance
-    if (senderAccount.balance < amount) {
-
-      return res.status(400).json({
-        message: "Insufficient balance"
-      });
-
-    }
-
-
-    // Generate transaction reference
-    const transactionReference = generateTransactionReference();
-
-
-    // Deduct money from sender
-    senderAccount.balance -= amount;
-
-    await senderAccount.save();
-
-
-    // Save transaction
-    const transaction = await Transaction.create({
-
-      transactionReference,
-
-      senderAccount: from,
-
-      receiverAccount: to,
-
-      amount,
-
-      transactionType: "inter-bank",
-
-      status: "successful",
-
-      description: "Interbank transfer"
-
-    });
-
-
-    res.status(200).json({
-
-      message: "Interbank transfer successful",
-
-      data: {
-        transactionReference,
-        senderAccount: from,
-        receiverAccount: to,
-        amount,
-        status: "successful"
-      }
-
-    });
-
-  } catch (error) {
-
-    console.error(
-      "Interbank transfer failed:",
-      error.message
-    );
-
-    res.status(500).json({
-
-      message: "Interbank transfer failed",
-
-      error: error.message
+      error: error.response?.data || error.message
 
     });
 
@@ -296,6 +172,5 @@ const interbankTransfer = async (req, res) => {
 
 
 module.exports = {
-  transferMoney,
-  interbankTransfer
+  createTransfer
 };

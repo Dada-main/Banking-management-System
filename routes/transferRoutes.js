@@ -1,19 +1,9 @@
-const express = require("express");
-
-const {
-  transferMoney,
-  interbankTransfer
-} = require("../controllers/TransferController");
+const express = require('express');
+const { requireAuth } = require('../middleware/auth');
+const { createTransfer } = require('../controllers/TransferController');
 
 const router = express.Router();
-
-
-// Intra-bank transfer
-router.post("/", transferMoney);
-
-
-// Interbank transfer
-router.post("/interbank", interbankTransfer);
-
+router.use(requireAuth);
+router.post('/', createTransfer);
 
 module.exports = router;

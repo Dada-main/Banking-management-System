@@ -2,16 +2,7 @@ const Account = require("../models/Account");
 const BVN = require("../models/bvn");
 const NIN = require("../models/NIN");
 const Customer = require("../models/Customer");
-
-
-// Generate a 10-digit account number
-const generateAccountNumber = () => {
-
-  return Math.floor(
-    1000000000 + Math.random() * 9000000000
-  ).toString();
-
-};
+const { nibssRequest } = require("../config/nibss");
 
 
 // Create account
@@ -20,27 +11,14 @@ const createAccount = async (req, res) => {
   try {
 
     const {
-      accountName,
-      bvn,
-      nin
+      accountName
     } = req.body;
 
 
-    // Validate account name
     if (!accountName) {
 
       return res.status(400).json({
         message: "Account name is required"
-      });
-
-    }
-
-
-    // Customer must provide BVN or NIN
-    if (!bvn && !nin) {
-
-      return res.status(400).json({
-        message: "BVN or NIN is required to create an account"
       });
 
     }
@@ -51,6 +29,7 @@ const createAccount = async (req, res) => {
       req.user.customerId
     );
 
+
     if (!customer) {
 
       return res.status(404).json({
@@ -60,7 +39,7 @@ const createAccount = async (req, res) => {
     }
 
 
-    // Check if customer already has an account
+    // A customer can only have one account
     if (customer.accountNumber) {
 
       return res.status(400).json({
@@ -70,59 +49,135 @@ const createAccount = async (req, res) => {
     }
 
 
-    let verifiedBVN = null;
-    let verifiedNIN = null;
+    // Find verified BVN
+    const verifiedBVN = await BVN.findOne({
+      customer: customer._id,
+      verified: true
+    });
 
 
-    // Check BVN
-    if (bvn) {
-
-      verifiedBVN = await BVN.findOne({
-        bvn,
-        verified: true
-      });
-
-    }
+    // Find verified NIN
+    const verifiedNIN = await NIN.findOne({
+      customer: customer._id,
+      verified: true
+    });
 
 
-    // Check NIN
-    if (nin) {
-
-      verifiedNIN = await NIN.findOne({
-        nin,
-        verified: true
-      });
-
-    }
-
-
-    // Customer must have a verified BVN or NIN
+    // Customer must have either BVN or NIN
     if (!verifiedBVN && !verifiedNIN) {
 
       return res.status(400).json({
-        message: "Customer must have a verified BVN or NIN before creating an account"
+        message:
+          "Customer must have a verified BVN or NIN before creating an account"
       });
 
     }
 
 
-    // Generate account number
-    let accountNumber;
-    let accountExists = true;
+    // --------------------------------
+    // Prepare KYC information
+    // --------------------------------
+
+    let kycType;
+    let kycID;
+    let DOB;
 
 
-    while (accountExists) {
+    if (verifiedBVN) {
 
-      accountNumber = generateAccountNumber();
+      // NOTE: NIBSS expects lowercase kycType values ("bvn" / "nin")
+      kycType = "bvn";
 
-      accountExists = await Account.findOne({
-        accountNumber
+      kycID = verifiedBVN.bvn;
+
+      DOB = verifiedBVN.dob;
+
+    } else if (verifiedNIN) {
+
+      kycType = "nin";
+
+      kycID = verifiedNIN.nin;
+
+      DOB =
+        verifiedNIN.dob ||
+        verifiedNIN.dateOfBirth;
+
+    }
+
+
+    // Make sure KYC information exists
+    if (!kycType || !kycID || !DOB) {
+
+      return res.status(400).json({
+        message: "KYC information is incomplete",
+        data: {
+          kycType,
+          kycID,
+          DOB
+        }
       });
 
     }
 
 
-    // Create account
+    // --------------------------------
+    // Create account on NIBSS
+    // --------------------------------
+
+    console.log("ACCOUNT KYC DATA:", {
+      kycType,
+      kycID,
+      DOB
+    });
+
+    const nibssAccount = await nibssRequest(
+
+      "post",
+      "/api/account/create",
+      {
+        data: {
+
+          kycType,
+
+          kycID,
+
+          dob: DOB
+
+        }
+      }
+    );
+
+
+    // --------------------------------
+    // Get account number from NIBSS
+    // --------------------------------
+
+    // NOTE: NIBSS nests the created account under an "account" key,
+    // e.g. { message, account: { accountNumber, ... } }
+    const accountNumber =
+      nibssAccount.account?.accountNumber ||
+      nibssAccount.account?.account_number ||
+      nibssAccount.accountNumber ||
+      nibssAccount.account_number;
+
+
+    if (!accountNumber) {
+
+      return res.status(502).json({
+
+        message: "NIBSS did not return an account number",
+
+        upstream: nibssAccount
+
+      });
+
+    }
+
+
+    // --------------------------------
+    // Save account locally
+    // --------------------------------
+
     const account = await Account.create({
 
       customer: customer._id,
@@ -135,26 +190,44 @@ const createAccount = async (req, res) => {
 
       balance: 15000,
 
-      bvn: verifiedBVN ? verifiedBVN.bvn : undefined,
+      bvn: verifiedBVN
+        ? verifiedBVN.bvn
+        : undefined,
 
-      nin: verifiedNIN ? verifiedNIN.nin : undefined
+      nin: verifiedNIN
+        ? verifiedNIN.nin
+        : undefined
 
     });
 
 
-    // Update customer with account number
+    // --------------------------------
+    // Update customer
+    // --------------------------------
+
     customer.accountNumber = accountNumber;
 
+
     if (verifiedBVN) {
+
       customer.bvn = verifiedBVN.bvn;
+
     }
 
+
     if (verifiedNIN) {
+
       customer.nin = verifiedNIN.nin;
+
     }
+
 
     await customer.save();
 
+
+    // --------------------------------
+    // Response
+    // --------------------------------
 
     res.status(201).json({
 
@@ -164,6 +237,7 @@ const createAccount = async (req, res) => {
 
     });
 
+
   } catch (error) {
 
     console.error(
@@ -171,9 +245,70 @@ const createAccount = async (req, res) => {
       error.message
     );
 
-    res.status(500).json({
+
+    console.error(
+      "NIBSS response:",
+      error.response?.data
+    );
+
+
+    res.status(
+      error.response?.status || 500
+    ).json({
 
       message: "Account creation failed",
+
+      error:
+        error.response?.data ||
+        error.message
+
+    });
+
+  }
+
+};
+
+
+// Get the logged-in customer's own account only
+// (never proxy NIBSS's full /api/accounts list here — that would
+// leak every customer's account across the whole fintech and break
+// data isolation)
+const getAccounts = async (req, res) => {
+
+  try {
+
+    const account = await Account.findOne({
+      customer: req.user.customerId
+    });
+
+
+    if (!account) {
+
+      return res.status(404).json({
+        message: "You do not have an account yet"
+      });
+
+    }
+
+
+    res.status(200).json({
+
+      message: "Account retrieved successfully",
+
+      data: account
+
+    });
+
+  } catch (error) {
+
+    console.error(
+      "Fetching account failed:",
+      error.message
+    );
+
+    res.status(500).json({
+
+      message: "Fetching account failed",
 
       error: error.message
 
@@ -185,5 +320,6 @@ const createAccount = async (req, res) => {
 
 
 module.exports = {
-  createAccount
+  createAccount,
+  getAccounts
 };

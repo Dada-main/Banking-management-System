@@ -1,64 +1,55 @@
 const Account = require("../models/Account");
+const { nibssRequest } = require("../config/nibss");
 
 
-// Check account balance
+// Always scoped to the logged-in customer's own account — never accepts
+// an account number from the request.
 const getBalance = async (req, res) => {
 
   try {
 
-    const { accountNumber } = req.params;
-
-
-    // Validate account number
-    if (!accountNumber) {
-
-      return res.status(400).json({
-        message: "Account number is required"
-      });
-
-    }
-
-
-    // Find account
     const account = await Account.findOne({
-      accountNumber
+      customer: req.user.customerId
     });
 
 
-    // Account not found
     if (!account) {
 
       return res.status(404).json({
-        message: "Account not found"
+        message: "No account found for this customer"
       });
 
     }
+
+
+    const liveBalance = await nibssRequest(
+      "get",
+      `/api/account/balance/${account.accountNumber}`
+    );
 
 
     res.status(200).json({
 
-      message: "Balance enquiry successful",
+      message: "Balance retrieved successfully",
 
-      data: {
-        accountNumber: account.accountNumber,
-        accountName: account.accountName,
-        balance: account.balance
-      }
+      accountNumber: account.accountNumber,
+
+      data: liveBalance
 
     });
 
   } catch (error) {
 
     console.error(
-      "Balance enquiry failed:",
+      "Balance check failed:",
       error.message
     );
 
     res.status(500).json({
 
-      message: "Balance enquiry failed",
+      message: "Balance check failed",
 
-      error: error.message
+      error: error.response?.data || error.message
 
     });
 

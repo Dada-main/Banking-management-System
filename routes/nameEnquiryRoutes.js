@@ -1,14 +1,9 @@
-const express = require("express");
-
-const {
-  nameEnquiry
-} = require("../controllers/NameEnquiryController");
+const express = require('express');
+const { requireAuth } = require('../middleware/auth');
+const { nameEnquiry } = require('../controllers/NameEnquiryController');
 
 const router = express.Router();
-
-
-// Name enquiry
-router.get("/:accountNumber", nameEnquiry);
-
+router.use(requireAuth);
+router.get('/:accountNumber', nameEnquiry);
 
 module.exports = router;

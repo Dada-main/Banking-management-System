@@ -1,118 +1,119 @@
-const axios = require("axios");
 const NIN = require("../models/NIN");
+const Customer = require("../models/Customer");
+const { nibssRequest } = require("../config/nibss");
 
 
-// Get NIBSS token
-const getNibssToken = async () => {
+const insertNin = async (req, res) => {
 
   try {
 
-    const response = await axios.post(
-      `${process.env.NIBSS_BASE_URL}/api/auth/token`,
-      {
-        apiKey: process.env.NIBSS_API_KEY,
-        apiSecret: process.env.NIBSS_API_SECRET
-      }
-    );
-
-    return response.data.token;
-
-  } catch (error) {
-
-    console.error(
-      "NIBSS authentication failed:",
-      error.response?.data || error.message
-    );
-
-    throw new Error("NIBSS authentication failed");
-  }
-};
-
-
-// Insert NIN
-const insertNIN = async (req, res) => {
-  try {
     const {
       nin,
       firstName,
       lastName,
-      phoneNumber, // <-- 1. Extract phoneNumber
-      dateOfBirth
+      dob
     } = req.body;
 
-    // Validate required fields
-    if (
-      !nin ||
-      !firstName ||
-      !lastName ||
-      !phoneNumber || // <-- 2. Validate phoneNumber
-      !dateOfBirth
-    ) {
+
+    if (!nin) {
+
       return res.status(400).json({
-        message: "All NIN fields (nin, firstName, lastName, phoneNumber, dateOfBirth) are required"
+        message: "nin is required"
       });
+
     }
 
-    // Check if NIN already exists
-    const existingNIN = await NIN.findOne({ nin });
-    if (existingNIN) {
-      return res.status(400).json({
-        message: "NIN already exists"
-      });
-    }
 
-    // Get NIBSS token
-    const token = await getNibssToken();
-
-    // Send NIN to NIBSS
-    const response = await axios.post(
-      `${process.env.NIBSS_BASE_URL}/api/insertNin`,
-      {
-        nin,
-        firstName,
-        lastName,
-        phoneNumber,
-        dob: dateOfBirth
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      }
+    const customer = await Customer.findById(
+      req.user.customerId
     );
 
-    // Save NIN locally
-    const newNIN = await NIN.create({
-      nin,
-      firstName,
-      lastName,
-      phoneNumber, // <-- 3. Pass phoneNumber to Mongoose
-      dateOfBirth,
-      verified: false
+    if (!customer) {
+
+      return res.status(404).json({
+        message: "Customer not found"
+      });
+
+    }
+
+
+    const existing = await NIN.findOne({
+      customer: customer._id
     });
 
+    if (existing) {
+
+      return res.status(400).json({
+        message: "Customer has already submitted a NIN"
+      });
+
+    }
+
+
+    await nibssRequest(
+      "post",
+      "/api/insertNin",
+      { data: { nin, firstName, lastName, dob } }
+    );
+
+
+    const validation = await nibssRequest(
+      "post",
+      "/api/validateNin",
+      { data: { nin } }
+    );
+
+
+    const record = await NIN.create({
+
+      customer: customer._id,
+
+      nin,
+
+      firstName,
+
+      lastName,
+
+      dob,
+
+      verified: true,
+
+      verifiedAt: new Date()
+
+    });
+
+
     res.status(201).json({
-      message: "NIN inserted successfully",
-      data: newNIN,
-      nibssResponse: response.data
+
+      message: "NIN verified successfully",
+
+      data: record,
+
+      validation
+
     });
 
   } catch (error) {
+
     console.error(
-      "NIN insertion failed:",
-      error.response?.data || error.message
+      "NIN verification failed:",
+      error.message
     );
 
     res.status(500).json({
-      message: "NIN insertion failed",
+
+      message: "NIN verification failed",
+
       error: error.response?.data || error.message
+
     });
+
   }
+
 };
 
 
-// Validate NIN
-const validateNIN = async (req, res) => {
+const validateNin = async (req, res) => {
 
   try {
 
@@ -122,61 +123,48 @@ const validateNIN = async (req, res) => {
     if (!nin) {
 
       return res.status(400).json({
-        message: "NIN is required"
+        message: "nin is required"
       });
 
     }
 
 
-    // Get NIBSS token
-    const token = await getNibssToken();
-
-
-    // Send NIN validation request to NIBSS
-    const response = await axios.post(
-      `${process.env.NIBSS_BASE_URL}/api/validateNin`,
-      {
-        nin
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      }
-    );
-
-
-    // Update local NIN as verified
-    const updatedNIN = await NIN.findOneAndUpdate(
-      { nin },
-      { verified: true },
-      { new: true }
+    const result = await nibssRequest(
+      "post",
+      "/api/validateNin",
+      { data: { nin } }
     );
 
 
     res.status(200).json({
-      message: "NIN validated successfully",
-      data: updatedNIN,
-      nibssResponse: response.data
+
+      message: "NIN validation successful",
+
+      data: result
+
     });
 
   } catch (error) {
 
     console.error(
       "NIN validation failed:",
-      error.response?.data || error.message
+      error.message
     );
 
     res.status(500).json({
+
       message: "NIN validation failed",
+
       error: error.response?.data || error.message
+
     });
 
   }
+
 };
 
 
 module.exports = {
-  insertNIN,
-  validateNIN
+  insertNin,
+  validateNin
 };

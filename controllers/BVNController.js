@@ -1,34 +1,11 @@
 const axios = require("axios");
 const BVN = require("../models/bvn");
-
-const getNibssToken = async () => {
-
-  try {
-
-    const response = await axios.post(
-      `${process.env.NIBSS_BASE_URL}/api/auth/token`,
-      {
-        apiKey: process.env.NIBSS_API_KEY,
-        apiSecret: process.env.NIBSS_API_SECRET
-      }
-    );
-
-    return response.data.token;
-
-  } catch (error) {
-
-    console.error(
-      "NIBSS authentication failed:",
-      error.response?.data || error.message
-    );
-
-    throw new Error("NIBSS authentication failed");
-  }
-};
+const Customer = require("../models/Customer");
+const { nibssRequest } = require("../config/nibss");
 
 
-// Insert BVN
-const insertBVN = async (req, res) => {
+// Insert + validate BVN for the logged-in customer
+const insertBvn = async (req, res) => {
 
   try {
 
@@ -36,96 +13,114 @@ const insertBVN = async (req, res) => {
       bvn,
       firstName,
       lastName,
-      dateOfBirth,
-      phoneNumber
+      dob,
+      phone
     } = req.body;
 
 
-    // Validate required fields
-    if (
-      !bvn ||
-      !firstName ||
-      !lastName ||
-      !dateOfBirth ||
-      !phoneNumber
-    ) {
+    if (!bvn) {
 
       return res.status(400).json({
-        message: "All BVN fields are required"
+        message: "bvn is required"
       });
 
     }
 
 
-    // Check if BVN already exists locally
-    const existingBVN = await BVN.findOne({ bvn });
+    const customer = await Customer.findById(
+      req.user.customerId
+    );
 
-    if (existingBVN) {
+    if (!customer) {
 
-      return res.status(400).json({
-        message: "BVN already exists"
+      return res.status(404).json({
+        message: "Customer not found"
       });
 
     }
 
 
-    // Get NIBSS token
-    const token = await getNibssToken();
+    // A customer can only submit BVN once — re-verifying overwrites nothing
+    const existing = await BVN.findOne({
+      customer: customer._id
+    });
+
+    if (existing) {
+
+      return res.status(400).json({
+        message: "Customer has already submitted a BVN"
+      });
+
+    }
 
 
-    // Send BVN to NIBSS
-    const response = await axios.post(
-      `${process.env.NIBSS_BASE_URL}/api/insertBvn`,
-      {
-        bvn,
-        firstName,
-        lastName,
-        dob: dateOfBirth,
-        phone: phoneNumber
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      }
+    await nibssRequest(
+      "post",
+      "/api/insertBvn",
+      { data: { bvn, firstName, lastName, dob, phone } }
     );
 
 
-    // Save BVN locally
-    const newBVN = await BVN.create({
+    const validation = await nibssRequest(
+      "post",
+      "/api/validateBvn",
+      { data: { bvn } }
+    );
+
+
+    const record = await BVN.create({
+
+      customer: customer._id,
+
       bvn,
+
       firstName,
+
       lastName,
-      dateOfBirth,
-      phoneNumber,
-      verified: false
+
+      dob,
+
+      phone,
+
+      verified: true,
+
+      verifiedAt: new Date()
+
     });
 
 
     res.status(201).json({
-      message: "BVN inserted successfully",
-      data: newBVN,
-      nibssResponse: response.data
+
+      message: "BVN verified successfully",
+
+      data: record,
+
+      validation
+
     });
 
   } catch (error) {
 
     console.error(
-      "BVN insertion failed:",
-      error.response?.data || error.message
+      "BVN verification failed:",
+      error.message
     );
 
     res.status(500).json({
-      message: "BVN insertion failed",
+
+      message: "BVN verification failed",
+
       error: error.response?.data || error.message
+
     });
 
   }
+
 };
 
 
-// Validate BVN
-const validateBVN = async (req, res) => {
+// Standalone validate — doesn't require an existing record
+const validateBvn = async (req, res) => {
 
   try {
 
@@ -135,61 +130,48 @@ const validateBVN = async (req, res) => {
     if (!bvn) {
 
       return res.status(400).json({
-        message: "BVN is required"
+        message: "bvn is required"
       });
 
     }
 
 
-    // Get NIBSS token
-    const token = await getNibssToken();
-
-
-    // Send BVN validation request to NIBSS
-    const response = await axios.post(
-      `${process.env.NIBSS_BASE_URL}/api/validateBvn`,
-      {
-        bvn
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      }
-    );
-
-
-    // Update local BVN as verified
-    const updatedBVN = await BVN.findOneAndUpdate(
-      { bvn },
-      { verified: true },
-      { new: true }
+    const result = await nibssRequest(
+      "post",
+      "/api/validateBvn",
+      { data: { bvn } }
     );
 
 
     res.status(200).json({
-      message: "BVN validated successfully",
-      data: updatedBVN,
-      nibssResponse: response.data
+
+      message: "BVN validation successful",
+
+      data: result
+
     });
 
   } catch (error) {
 
     console.error(
       "BVN validation failed:",
-      error.response?.data || error.message
+      error.message
     );
 
     res.status(500).json({
+
       message: "BVN validation failed",
+
       error: error.response?.data || error.message
+
     });
 
   }
+
 };
 
 
 module.exports = {
-  insertBVN,
-  validateBVN
+  insertBvn,
+  validateBvn
 };

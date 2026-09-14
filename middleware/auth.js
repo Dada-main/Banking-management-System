@@ -1,32 +1,49 @@
 const jwt = require("jsonwebtoken");
 
-const protect = (req, res, next) => {
-  const authHeader = req.headers.authorization;
 
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return res.status(401).json({
-      message: "Not authorized, no token"
-    });
-  }
-
-  const token = authHeader.split(" ")[1];
+const requireAuth = (req, res, next) => {
 
   try {
+
+    const authHeader = req.headers.authorization || "";
+
+    const token = authHeader.startsWith("Bearer ")
+      ? authHeader.slice(7)
+      : null;
+
+
+    if (!token) {
+
+      return res.status(401).json({
+        message: "Missing bearer token"
+      });
+
+    }
+
+
     const decoded = jwt.verify(
       token,
       process.env.JWT_SECRET
     );
 
-    req.user = decoded;
+    req.user = {
+      customerId: decoded.customerId
+    };
 
     next();
+
   } catch (error) {
+
     return res.status(401).json({
-      message: "Not authorized, invalid token"
+      message: "Invalid or expired token",
+      error: error.message
     });
+
   }
+
 };
 
+
 module.exports = {
-  protect
+  requireAuth
 };

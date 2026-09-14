@@ -1,64 +1,33 @@
-const express = require("express");
-const dotenv = require("dotenv");
-const cors = require("cors");
-const connectDB = require("./config/database");
+require('dotenv').config();
+const express = require('express');
+const connectDB = require('./config/database');
 
-const bvnRoutes = require("./routes/bvnRoutes");
-
-const ninRoutes = require("./routes/ninRoutes");
-
-const accountRoutes = require("./routes/accountRoutes");
-
-const nameEnquiryRoutes = require("./routes/nameEnquiryRoutes");
-
-const balanceRoutes = require("./routes/balanceRoutes");
-
-const transferRoutes = require("./routes/transferRoutes");
-
-const transactionRoutes = require("./routes/transactionRoutes");
-
-const customerRoutes = require("./routes/customerRoutes");
-
-dotenv.config();
-connectDB();
+const customerRoutes = require('./routes/customerRoutes');
+const bvnRoutes = require('./routes/bvnRoutes');
+const ninRoutes = require('./routes/ninRoutes');
+const accountRoutes = require('./routes/accountRoutes');
+const balanceRoutes = require('./routes/balanceRoutes');
+const nameEnquiryRoutes = require('./routes/nameEnquiryRoutes');
+const transferRoutes = require('./routes/transferRoutes');
+const transactionRoutes = require('./routes/transactionRoutes');
 
 const app = express();
-
-app.use(cors());
 app.use(express.json());
 
-//BVN routes
-app.use("/api/bvn", bvnRoutes);
+app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 
-//NIN routes
-app.use("/api/nin", ninRoutes);
+app.use('/api/customers', customerRoutes);
+app.use('/api/bvn', bvnRoutes);
+app.use('/api/nin', ninRoutes);
+app.use('/api/accounts', accountRoutes);
+app.use('/api/balance', balanceRoutes);
+app.use('/api/name-enquiry', nameEnquiryRoutes);
+app.use('/api/transfer', transferRoutes);
+app.use('/api/transactions', transactionRoutes);
 
-//Account routes
-app.use("/api/account", accountRoutes);
-
-//Name Enquiry routes
-app.use("/api/account/name-enquiry", nameEnquiryRoutes);
-
-//Balance routes
-app.use("/api/account/balance", balanceRoutes);
-
-//Transfer routes
-app.use("/api/transfer", transferRoutes);
-
-//Transaction routes
-app.use("/api/transaction", transactionRoutes);
-
-//Customer routes
-app.use("/api/customer", customerRoutes);
-
-app.get("/", (req, res) => {
-  res.json({
-    message: "Banking Management System API is running",
-  });
-});
+app.use((req, res) => res.status(404).json({ message: `Route not found: ${req.method} ${req.originalUrl}` }));
 
 const PORT = process.env.PORT || 3000;
-
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+connectDB().then(() => {
+  app.listen(PORT, () => console.log(`[server] Listening on port ${PORT}`));
 });

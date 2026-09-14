@@ -1,16 +1,11 @@
-const express = require("express");
-
-const {
-  createAccount
-} = require("../controllers/accountController");
-
-const { protect } = require("../middleware/auth");
+const express = require('express');
+const { requireAuth } = require('../middleware/auth');
+const { createAccount, getAccounts } = require('../controllers/accountController');
 
 const router = express.Router();
+router.use(requireAuth);
 
-
-// Create account
-router.post("/create", protect, createAccount);
-
+router.post('/', createAccount);
+router.get('/', getAccounts);
 
 module.exports = router;

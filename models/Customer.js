@@ -10,7 +10,9 @@ const customerSchema = new mongoose.Schema({
   email: {
     type: String,
     required: true,
-    unique: true
+    unique: true,
+    lowercase: true,
+    trim: true
   },
 
   password: {
@@ -26,6 +28,12 @@ const customerSchema = new mongoose.Schema({
     type: String
   },
 
+  // Tracks if the customer has passed BVN/NIN validation
+  isVerified: {
+    type: Boolean,
+    default: false
+  },
+
   accountNumber: {
     type: String,
     unique: true,
@@ -36,9 +44,7 @@ const customerSchema = new mongoose.Schema({
 { timestamps: true }
 );
 
-
 // Create model
-
 const Customer = mongoose.model("Customer", customerSchema);
 
 module.exports = Customer;

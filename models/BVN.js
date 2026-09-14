@@ -1,36 +1,52 @@
 const mongoose = require("mongoose");
 
-const bvnSchema = new mongoose.Schema({
-  bvn: {
-    type: String,
-    required: true,
-    unique: true
+
+const bvnSchema = new mongoose.Schema(
+
+  {
+
+    customer: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Customer",
+      required: true,
+      unique: true
+    },
+
+    bvn: {
+      type: String,
+      required: true
+    },
+
+    firstName: {
+      type: String
+    },
+
+    lastName: {
+      type: String
+    },
+
+    dob: {
+      type: String
+    },
+
+    phone: {
+      type: String
+    },
+
+    verified: {
+      type: Boolean,
+      default: false
+    },
+
+    verifiedAt: {
+      type: Date
+    }
+
   },
-  firstName: {
-    type: String,
-    required: true
-  },
-  lastName: {
-    type: String,
-    required: true
-  },
-  phoneNumber: {
-    type: String,
-    required: true
-  },
-  dateOfBirth: {
-    type: String,
-    required: true
-  },
-  verified: {
-    type: Boolean,
-    default: false
-  }
-},
-{timestamps: true}
+
+  { timestamps: true }
+
 );
 
-//create model from schema
-const BVN = mongoose.model("BVN", bvnSchema);
 
-module.exports = BVN;    //export the model to use in other files
+module.exports = mongoose.model("BVN", bvnSchema);
